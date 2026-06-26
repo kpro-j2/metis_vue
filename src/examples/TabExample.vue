@@ -8,6 +8,12 @@
      <span v-if="activate == true">active</span>
      <span v-else> suspended </span>
     </div>
+    <div v-if="!api" class="text-red-800 font-semibold">
+      API is not registered for part 'scaler-monitor'. Configure it in UI Setting.
+    </div>
+    <div v-if="api && tabList.length === 0" class="text-amber-900 font-semibold">
+      Scaler IP list is empty. Configure it in UI Setting.
+    </div>
 <!--    
     <tab-container class="w-11/12 lg:w-10/12 mx-auto mb-16" :tabList="tabList">
       <template v-slot:tabPanel-1> Content 1 </template>
@@ -54,14 +60,29 @@
 import TabContainer from '../components/TabContainer.vue';
 import AmaneqScaler from '../components/AmaneqScaler.vue';
 import axios from 'axios';
+import { getPartApi, getScalerIps } from '@/utilities/ApiRegistry';
 
 export default {
+  props: {
+    apiBase: {
+      type: String,
+      default: '',
+    },
+  },
   components: {
     TabContainer,
     AmaneqScaler,
   },
   methods: {
+    refreshApi() {
+      this.api = this.apiBase || getPartApi('scaler-monitor');
+      this.tabList = getScalerIps();
+    },
     toggle(activate) {
+      this.refreshApi();
+      if (!this.api) {
+        return;
+      }
       console.log(activate);
       if (activate) {
       // toggle from activated to suspended
@@ -73,23 +94,22 @@ export default {
   },
   data() {
     return {
-      api: "http://172.16.210.154:8000",
+      api: "",
       resume: "/scaler/resume",
       suspend: "/scaler/suspend",
       activate: false,
       tabList: [
-//      "192.168.2.160",
-//      "192.168.2.161",
-//      "192.168.2.162",
-//      "192.168.2.163",
-//      "192.168.2.164",
-//      "192.168.2.165",
-//      "192.168.2.166",
-//      "192.168.2.167",
-//      "192.168.2.168",
-"192.168.2.169"
+    //      "192.168.2.160"
       ]
     };
+  },
+  mounted() {
+    this.refreshApi();
+  },
+  watch: {
+    apiBase() {
+      this.refreshApi();
+    },
   },
 };
 </script>

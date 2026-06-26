@@ -1,5 +1,8 @@
 <template>
    <div>
+      <div v-if="!fastapi_uri" class="text-red-700">
+         API is not registered for part 'nestdaq-status'.
+      </div>
       <table>
          <tr>
            <th>device</th><th>status</th>
@@ -16,16 +19,27 @@
 
 <script>
 import axios from 'axios'
+import { getPartApi } from '@/utilities/ApiRegistry';
 
 export default {
    data() {
       return {
-         msg: {"device":"IDLE"}
+         msg: {"device":"IDLE"},
+         fastapi_uri: "",
+         api_part_key: "nestdaq-status",
       }
    },
    methods: {
+      refreshApiBase() {
+         this.fastapi_uri = getPartApi(this.api_part_key);
+      },
       update() {
-         axios.get('http://ata03:8000/nestdaq/status/')
+         this.refreshApiBase();
+         if (!this.fastapi_uri) {
+            setTimeout(() => { this.update(); }, 1000);
+            return;
+         }
+         axios.get(this.fastapi_uri + '/nestdaq/status/')
         .then((response) => {
             //console.log(response.data);
                 this.msg = response.data;
@@ -34,6 +48,7 @@ export default {
       }
    },
    mounted() {
+      this.refreshApiBase();
       this.update()
    }
 }

@@ -1,5 +1,12 @@
 <template>
    <h2 class="text-xl font-bold"> NestDAQ Run Controller </h2>
+   <div v-if="!fastapi_uri" class="text-red-700">
+      API is not registered for part 'nestdaq-controller'. Please register it in Config.
+   </div>
+   <div v-if="fastapi_uri && !redis_ready" class="warn-box">
+      <div class="text-l font-bold">Redis registration is required</div>
+      <p class="caption">Please configure Redis host/port/db in UI Setting (NestDAQ section).</p>
+   </div>
    <table>
    <tr><td> DAQ status: </td><td> <span class="text-4xl"> {{daq_state}} </span></td></tr>
    <tr v-if="daq_state=='RUNNING'">
@@ -238,8 +245,8 @@
    </div>
    <div>&nbsp;</div>
    <div>
-      <NestDAQStateList></NestDAQStateList>
-      <NestDAQSoundAlert></NestDAQSoundAlert>
+      <NestDAQStateList :apiBase="fastapi_uri"></NestDAQStateList>
+      <NestDAQSoundAlert :apiBase="fastapi_uri"></NestDAQSoundAlert>
    </div>
 </template>
 
@@ -271,6 +278,12 @@
     p-1.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400
     dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500;
   }
+   .warn-box {
+      @apply bg-amber-50 border border-amber-400 text-amber-900 rounded p-3 my-2;
+   }
+   .caption {
+      @apply text-sm text-gray-700 my-2;
+   }
 </style>
 
 <script>
@@ -278,6 +291,7 @@ import axios from 'axios'
 import NestDAQStateList  from './NestDAQStateList.vue'
 import NestDAQSoundAlert from './NestDAQSoundAlert.vue'
 import { useGlobalStore } from '@/stores/global';
+import { getPartApi } from '@/utilities/ApiRegistry';
 export default {
    components: {
       NestDAQStateList,
@@ -286,7 +300,8 @@ export default {
    data() {
       return {
          objectPool: useGlobalStore().objectPool,
-         fastapi_uri: "http://ata03:8000",
+         fastapi_uri: "",
+         api_part_key: "nestdaq-controller",
          browser_tab_id: 0,
          state_change_start_time_in_sec: 0,
          state_change_elapsed_time_in_sec: 0,
@@ -298,6 +313,8 @@ export default {
          daq_stop_time: "",
          expert_mode_enabled: false,
          run_elapsed_time: 0,
+         redis_ready: false,
+         redis_initialized: false,
          daq_state_destination: {
             "CONNECT"      : "DEVICE READY",
             "INIT TASK"    : "READY",
@@ -350,7 +367,33 @@ export default {
       }
    },
    methods: {
+      refreshApiBase() {
+         this.fastapi_uri = getPartApi(this.api_part_key);
+      },
       update() {
+         this.refreshApiBase();
+         if (!this.fastapi_uri) {
+            setTimeout(() => { this.update(); }, 1000);
+            return;
+         }
+         // Redis status check
+         axios.get(this.fastapi_uri + '/redis/status')
+         .then((response) => {
+            this.redis_ready = !!response.data?.connected;
+         }).catch(() => {
+            this.redis_ready = false;
+         });
+         
+         if (!this.redis_ready) {
+            setTimeout(() => { this.update(); }, 1000);
+            return;
+         }
+         if (!this.redis_initialized) {
+            for (let key in this.key_val_read){
+               this.key_init(key);
+            }
+            this.redis_initialized = true;
+         }
          this.check_daq_state();
          this.check_auto_run_change();
          this.daq_current_time = new Date();
@@ -367,6 +410,7 @@ export default {
          this.objectPool["daq"]["elapsed_time"] = this.run_elapsed_time;
          setTimeout(() => { this.update(); }, 1000);
       },
+      
       check_daq_state(){
          axios.get(this.fastapi_uri+'/nestdaq/status/')
          .then((response) => {
@@ -567,10 +611,9 @@ export default {
    },
    mounted() {
       this.objectPool["daq"] = {};
+      this.refreshApiBase();
+      this.refreshRedisStatus();
       this.update();
-      for (let key in this.key_val_read){
-         this.key_init(key);
-      }
       this.browser_tab_id = sessionStorage.tabID ? 
          sessionStorage.tabID : 
          sessionStorage.tabID = parseInt((Math.random())*1e10);

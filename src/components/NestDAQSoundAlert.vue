@@ -74,10 +74,18 @@
 </style>
 <script>
 import axios from 'axios'
+import { getPartApi } from '@/utilities/ApiRegistry';
 export default {
+   props: {
+      apiBase: {
+         type: String,
+         default: "",
+      },
+   },
    data() {
       return {
-         fastapi_uri: "http://ata03:8000",
+         fastapi_uri: "",
+         api_part_key: "nestdaq-sound-alert",
          config_panel_enabled : false,
          sound_activated: false,
          playing_sound: false,
@@ -96,7 +104,15 @@ export default {
       }
    },
    methods: {
+      refreshApiBase() {
+         this.fastapi_uri = this.apiBase || getPartApi(this.api_part_key);
+      },
       update() {
+         this.refreshApiBase();
+         if (!this.fastapi_uri) {
+            setTimeout(() => { this.update(); }, 1000);
+            return;
+         }
          for (let key in this.key_val_read){
             this.key_read(key);
          }
@@ -167,7 +183,11 @@ export default {
       }
    },
    mounted() {
+      this.refreshApiBase();
       this.update()
+      if (!this.fastapi_uri) {
+         return;
+      }
       for (let key in this.key_val_read){
          this.key_init(key);
       }

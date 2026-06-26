@@ -3,105 +3,122 @@
 
    <h1>Metis</h1>
    <div>
-      <ul class="tabs-menu" v-for="(tab, name) in tablist" :key="name">
+      <ul class="tabs-menu">
          <li
-            :class="{ active: currentTab === name }"
-            @click="currentTab = name"
-         >{{ tab }}</li>
-         </ul>
+            v-for="tab in visibleTabs"
+            :key="tab.name"
+            :class="{ active: currentTab === tab.name }"
+            @click="currentTab = tab.name"
+         >{{ tab.label }}</li>
+      </ul>
       <div class="tabs-content">
-         <!-- 
-            コンポーネントを keep-alive で破壊されないようにする。keep-aliveのコンポーネントは一つのみ。
-            https://qiita.com/yuta-katayama-23/items/db3e4b4f9bfb098e5e6f
-          -->
-          <keep-alive> 
-            <component :is="currentTab" v-bind="getPropsForCurrentTab"></component>
+         <keep-alive>
+            <component :is="currentTab" v-bind="currentProps"></component>
          </keep-alive>
       </div>
-      <div v-if="initialized">
-      <div v-show="false">
-      <div v-for="(tab, name) in tablist" :key="name">
-         <component :is="name" v-bind="getProps(name)"></component>
-      </div>
-      </div>
+      <div v-if="visibleTabs.length === 1 && visibleTabs[0].name === 'ConfigPanel'" class="setup-hint">
+         API 設定が未完了です。Config タブで API を登録し、疎通できると各タブが表示されます。
       </div>
    </div>
 </template>
 <script>
+import axios from 'axios';
 import NestDAQController from './components/NestDAQController.vue'
-import NestDAQStateList  from './components/NestDAQStateList.vue'
-import NestDAQSoundAlert from './components/NestDAQSoundAlert.vue'
 import TabExample from './examples/TabExample.vue'
 import RunStatusSummary from './components/RunStatusSummary.vue'
 import LocalTimestamp from './components/LocalTimestamp.vue'
 import ConfigPanel from './components/ConfigPanel.vue'
-import BabirlDAQController from './components/BabirlDAQController.vue'
+import HvDashboard from './components/HvDashboard.vue'
+import { getPartApi, getScalerIps } from '@/utilities/ApiRegistry';
 
 export default {
    data () {
       return {
-         initialized: false,
-         tablist: {
-            RunStatusSummary: 'Status',
-            NestDAQController: 'NestDAQ',
-            BabirlDAQController: 'Babirl',
-            TabExample: 'Scaler',
-            ConfigPanel: 'Config'
-         },
-         currentTab: 'RunStatusSummary',
-         propsForRunStatusSummary : {},
-         propsForNestDAQController: { },
-         propsForTabExample: { },
-         propsForBabirlDAQController: { 
-            apiurl : 'http://172.16.210.154:8001/babirl',
-            hostname : 'nhdaq300' }
+         currentTab: 'ConfigPanel',
+         visibleTabs: [
+            { name: 'ConfigPanel', label: 'UI Setting' }
+         ],
+         refreshTimerId: null,
       }
    },
    computed: {
-      getPropsForCurrentTab() {
-         switch (this.currentTab) {
-            case 'RunStatusSummary':
-               return this.propsForRunStatusSummary;
-            case 'NestDAQController':
-               return this.propsForNestDAQController;
-            case 'TabExample':
-               return this.propsForTabExample;
-            case 'BabirlDAQController':
-               return this.propsForBabirlDAQController;
-            default:
-               return {};
-         }
+      currentProps() {
+         const nestdaqApi = getPartApi('nestdaq-controller');
+         const scalerApi = getPartApi('scaler-monitor');
+         const hvApi = getPartApi('hv-monitor');
+         const propsByTab = {
+            RunStatusSummary: {},
+            NestDAQController: { apiBase: nestdaqApi },
+            TabExample: { apiBase: scalerApi },
+            HvDashboard: { apiBase: hvApi },
+            ConfigPanel: {},
+         };
+         return propsByTab[this.currentTab] || {};
       }
    },
    components: {
       NestDAQController,
-      NestDAQStateList,
-      NestDAQSoundAlert,
       TabExample,
       RunStatusSummary,
       LocalTimestamp,
       ConfigPanel,
-      BabirlDAQController,
+      HvDashboard,
    },
    methods: {
-      getProps: function (name) {
-         switch (name) {
-            case 'RunStatusSummary':
-               return this.propsForRunStatusSummary;
-            case 'NestDAQController':
-               return this.propsForNestDAQController;
-            case 'TabExample':
-               return this.propsForTabExample;
-            case 'BabirlDAQController':
-               return this.propsForBabirlDAQController;
-            default:
-               return {};
+      async checkApiReady(partKey, healthPath) {
+         const base = getPartApi(partKey);
+         if (!base) {
+            return false;
+         }
+         const url = `${base.replace(/\/$/, '')}${healthPath}`;
+         try {
+            await axios.get(url, { timeout: 1500 });
+            return true;
+         } catch (_e) {
+            return false;
          }
       },
+      async refreshVisibleTabs() {
+         const [nestdaqReady, scalerReady, hvReady] = await Promise.all([
+            this.checkApiReady('nestdaq-controller', '/nestdaq/'),
+            this.checkApiReady('scaler-monitor', '/scaler/read/info/all/'),
+            this.checkApiReady('hv-monitor', '/rph032/config/list'),
+         ]);
+         const scalerIpsReady = getScalerIps().length > 0;
+
+         const nextTabs = [];
+         if (nestdaqReady || (scalerReady && scalerIpsReady) || hvReady) {
+            nextTabs.push({ name: 'RunStatusSummary', label: 'Overview' });
+         }
+         if (nestdaqReady) {
+            nextTabs.push({ name: 'NestDAQController', label: 'NestDAQ' });
+         }
+         if (scalerReady && scalerIpsReady) {
+            nextTabs.push({ name: 'TabExample', label: 'Scaler' });
+         }
+         if (hvReady) {
+            nextTabs.push({ name: 'HvDashboard', label: 'HV' });
+         }
+         nextTabs.push({ name: 'ConfigPanel', label: 'UI Setting' });
+
+         this.visibleTabs = nextTabs;
+         const names = this.visibleTabs.map((t) => t.name);
+         if (!names.includes(this.currentTab)) {
+            this.currentTab = this.visibleTabs[0].name;
+         }
+      }
    },
    mounted () {
-      this.initialized = true;
-   }  
+      this.refreshVisibleTabs();
+      this.refreshTimerId = setInterval(() => {
+         this.refreshVisibleTabs();
+      }, 3000);
+   },
+   beforeUnmount() {
+      if (this.refreshTimerId) {
+         clearInterval(this.refreshTimerId);
+      }
+   }
 }
 </script>
 
@@ -113,12 +130,13 @@ export default {
   margin: 0;
   padding: 0;
   list-style-type: none;
+   display: flex;
+   flex-wrap: wrap;
 }
 
 /* タブの基本スタイル */
 .tabs-menu li {
   display: block;
-  float: left;
   margin-right: 8px;
   margin-bottom: -1px;
   padding: 10px 20px;
@@ -156,5 +174,11 @@ export default {
   border: 1px solid #999;
   border-radius: 0 4px 4px 4px;
   padding: 10px 10px 30px 10px;
+}
+
+.setup-hint {
+   margin-top: 12px;
+   color: #9f1239;
+   font-weight: 600;
 }
 </style>

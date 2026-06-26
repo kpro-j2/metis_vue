@@ -23,10 +23,18 @@
 
 <script>
 import axios from 'axios'
+import { getPartApi } from '@/utilities/ApiRegistry';
 export default {
+   props: {
+      apiBase: {
+         type: String,
+         default: "",
+      },
+   },
    data() {
       return {
-         fastapi_uri: "http://ata03:8000",
+         fastapi_uri: "",
+         api_part_key: "nestdaq-state-list",
          nestdaq_status_msg: {"device":"IDLE"},
          nestdaq_device_list: {},
          nestdaq_device_state_list: {},
@@ -51,7 +59,15 @@ export default {
       }
    },
    methods: {
+      refreshApiBase() {
+         this.fastapi_uri = this.apiBase || getPartApi(this.api_part_key);
+      },
       update() {
+         this.refreshApiBase();
+         if (!this.fastapi_uri) {
+            setTimeout(() => { this.update(); }, 1000);
+            return;
+         }
          this.make_state_list();  
          setTimeout(() => { this.update(); }, 1000);
       },
@@ -79,6 +95,7 @@ export default {
       }
    },
    mounted() {
+      this.refreshApiBase();
       this.update()
    }
 }
