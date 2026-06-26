@@ -41,7 +41,7 @@
       class="w-11/12 lg:w-10/12 mx-auto"
       :tabList="tabList"
       variant="horizontal">
-         <template v-for="ip,itab in tabList" :key="itab" #[`tabPanel-${itab+1}`]><amaneq-scaler :ip=ip></amaneq-scaler></template>
+        <template v-for="ip,itab in tabList" :key="itab" #[`tabPanel-${itab+1}`]><amaneq-scaler :ip="ip" :apiBase="api"></amaneq-scaler></template>
       </tab-container>
     <div class="text-center py-12">
       <a

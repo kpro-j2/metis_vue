@@ -612,7 +612,6 @@ export default {
    mounted() {
       this.objectPool["daq"] = {};
       this.refreshApiBase();
-      this.refreshRedisStatus();
       this.update();
       this.browser_tab_id = sessionStorage.tabID ? 
          sessionStorage.tabID : 

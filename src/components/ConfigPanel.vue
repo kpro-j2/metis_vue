@@ -246,6 +246,45 @@ export default defineComponent({
     };
   },
   methods: {
+    async loadUiConfigFromServer() {
+      const candidates = [
+        this.nestdaqApiUri,
+        this.scalerApiUri,
+        this.hvApiUri,
+        '',
+      ]
+        .map((v) => String(v || '').replace(/\/$/, ''))
+        .filter((v, i, a) => a.indexOf(v) === i);
+
+      for (const base of candidates) {
+        const url = `${base}/ui/config/get`;
+        try {
+          const response = await axios.get(url, { timeout: 1500 });
+          const data = response.data || {};
+          const nestdaq = String(data.nestdaq_api_uri || '').trim();
+          const scaler = String(data.scaler_api_uri || '').trim();
+          const scalerIps = Array.isArray(data.scaler_ips)
+            ? data.scaler_ips.map((v) => String(v || '').trim()).filter((v) => v.length > 0)
+            : [];
+
+          if (nestdaq) {
+            setPartApi('nestdaq-controller', nestdaq);
+            this.nestdaqApiUri = nestdaq;
+          }
+          if (scaler) {
+            setPartApi('scaler-monitor', scaler);
+            this.scalerApiUri = scaler;
+          }
+          if (scalerIps.length > 0) {
+            setScalerIps(scalerIps);
+            this.scalerIpText = scalerIps.join('\n');
+          }
+          return;
+        } catch (_e) {
+          // Try next candidate endpoint.
+        }
+      }
+    },
     toggleSection(section) {
       this.activeSection = this.activeSection === section ? '' : section;
     },
@@ -335,23 +374,42 @@ export default defineComponent({
         this.modules = [];
       }
     },
-    saveNestdaqConfig() {
+    async saveNestdaqConfig() {
       if (!this.nestdaqApiUri) {
         this.setMessage('nestdaq api uri is required', 'error');
         return;
       }
       setPartApi('nestdaq-controller', this.nestdaqApiUri);
-      this.refreshStatuses();
+      try {
+        const base = String(this.nestdaqApiUri).replace(/\/$/, '');
+        const uri = encodeURIComponent(String(this.nestdaqApiUri).replace(/\/$/, ''));
+        await axios.get(`${base}/ui/config/set/nestdaq_api/${uri}`);
+      } catch (_e) {
+        // Keep localStorage behavior even if server-side persistence fails.
+      }
+      await this.refreshStatuses();
       this.setMessage('saved nestdaq api', 'ok');
     },
-    saveScalerConfig() {
+    async saveScalerConfig() {
       if (!this.scalerApiUri) {
         this.setMessage('scaler api uri is required', 'error');
         return;
       }
       setPartApi('scaler-monitor', this.scalerApiUri);
-      setScalerIps(this.parseScalerIpList());
-      this.refreshStatuses();
+      const ips = this.parseScalerIpList();
+      setScalerIps(ips);
+
+      try {
+        const base = String(this.scalerApiUri).replace(/\/$/, '');
+        const uri = encodeURIComponent(String(this.scalerApiUri).replace(/\/$/, ''));
+        await axios.get(`${base}/ui/config/set/scaler_api/${uri}`);
+        const csv = encodeURIComponent(ips.join(','));
+        await axios.get(`${base}/ui/config/set/scaler_ips/${csv}`);
+      } catch (_e) {
+        // Keep localStorage behavior even if server-side persistence fails.
+      }
+
+      await this.refreshStatuses();
       this.setMessage('saved scaler config', 'ok');
     },
     saveHvApi() {
@@ -550,8 +608,9 @@ export default defineComponent({
       }
     },
   },
-  mounted() {
-    this.refreshStatuses();
+  async mounted() {
+    await this.loadUiConfigFromServer();
+    await this.refreshStatuses();
   },
 });
 </script>

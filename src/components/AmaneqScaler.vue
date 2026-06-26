@@ -61,11 +61,16 @@ import LocalTimestamp from './LocalTimestamp.vue';
 import TS from '../utilities/Timestamp'
 import { useGlobalStore } from '@/stores/global';
 import { ref } from 'vue';
+import { getPartApi } from '@/utilities/ApiRegistry';
 
 export default {
    components: { LocalTimestamp },
    props: {
       ip: String,
+      apiBase: {
+         type: String,
+         default: '',
+      },
    },
    data() {
       return {
@@ -82,14 +87,24 @@ export default {
          nRows: 32,
          active: false,
          scrs: [],
-         baseUri: 'http://172.16.210.154:8000',
+         baseUri: '',
          addUri: '/scaler/add/hul/' + this.ip,
          readDataUri: '/scaler/read/data/' + this.ip
          // 表を整形する
       }
    },
    methods: {
+      refreshBaseUri() {
+         this.baseUri = (this.apiBase || getPartApi('scaler-monitor') || '').replace(/\/$/, '');
+      },
       update() {
+         this.refreshBaseUri();
+         if (!this.baseUri) {
+            this.isValid = false;
+            this.error = 'scaler-monitor api is not configured';
+            setTimeout(() => { this.update(); }, 1000);
+            return;
+         }
          axios.get(this.baseUri+this.readDataUri)
             .then((response) => {
                this.status = response.data.header.status;
@@ -148,6 +163,12 @@ export default {
       //console.log(this.ip);
       if (this.objectPool["scalers"] == undefined) {
          this.objectPool["scalers"] = {};
+      }
+      this.refreshBaseUri();
+      if (!this.baseUri) {
+         this.isValid = false;
+         this.error = 'scaler-monitor api is not configured';
+         return;
       }
       axios.get(this.baseUri+this.addUri)
          .then((response) => {
