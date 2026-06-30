@@ -232,8 +232,25 @@ export default {
         row.error = this.describeError(e);
       }
     },
+    async readMeasuredOnly(row) {
+      if (!this.normalizedApiBase) {
+        return;
+      }
+      try {
+        const statusRes = await axios.get(this.rph032(`/${encodeURIComponent(row.module)}/status/${row.ch}`));
+        row.measuredVoltage = statusRes.data?.voltage ?? null;
+        row.measuredCurrent = statusRes.data?.current ?? null;
+        row.lastTimestamp = statusRes.data?.timestamp ?? null;
+        row.error = statusRes.data?.error || '';
+      } catch (e) {
+        row.error = this.describeError(e);
+      }
+    },
     async readStatusAll() {
       await Promise.all(this.rows.map((row) => this.readStatus(row)));
+    },
+    async readMeasuredOnlyAll() {
+      await Promise.all(this.rows.map((row) => this.readMeasuredOnly(row)));
     },
     async applyOn(row) {
       if (!this.normalizedApiBase) {
@@ -244,7 +261,7 @@ export default {
           params: { limit: row.currentLimit, ramp: row.rampSpeed },
         });
         this.message = `Applied ON: ${row.module} ch${row.ch}`;
-        await this.readStatus(row);
+        await this.readMeasuredOnly(row);
       } catch (e) {
         row.error = this.describeError(e);
       }
@@ -256,7 +273,7 @@ export default {
       try {
         await axios.get(this.rph032(`/${encodeURIComponent(row.module)}/off/${row.ch}`));
         this.message = `Applied OFF: ${row.module} ch${row.ch}`;
-        await this.readStatus(row);
+        await this.readMeasuredOnly(row);
       } catch (e) {
         row.error = this.describeError(e);
       }
@@ -326,13 +343,13 @@ export default {
         if (this.pollTick % 3 === 0) {
           this.loadModules();
         }
-        this.readStatusAll();
+        this.readMeasuredOnlyAll();
       }, 1000);
     },
   },
   async mounted() {
     await this.loadModules();
-    await this.readStatusAll();
+    await this.readMeasuredOnlyAll();
     this.schedulePolling();
   },
   beforeUnmount() {
